@@ -1,0 +1,583 @@
+--[[
+    RED HUB (V1) - Murder Mystery 2
+    Clean WindUI Version with Custom Toggle & Background
+]]
+
+if _G.RedHubCleanup then
+	_G.__RedHubReloading = true
+	pcall(_G.RedHubCleanup)
+	_G.__RedHubReloading = nil
+end
+
+-- Clear previous GUI instances safely
+pcall(function()
+	local CoreGui_ = game:GetService("CoreGui")
+	for _, child in ipairs(CoreGui_:GetChildren()) do
+		if child.Name == "RedHubESP" or child.Name:match("^RedHub.+Button$") or child.Name == "RedHubExecutorWarning" then
+			child:Destroy()
+		end
+	end
+end)
+
+pcall(function()
+	local hui = gethui and gethui() or game:GetService("CoreGui")
+	for _, child in ipairs(hui:GetChildren()) do
+		if child.Name == "WindUI" or child.Name:match("^WindUI/") or child.Name == "RedHubCard" or child.Name:match("^RedHub.+$") then
+			child:Destroy()
+		end
+	end
+end)
+
+-- Load WindUI Library
+local WindUI
+do
+	local response = nil
+	local function makeFolderSafe(path)
+		if makefolder and isfolder and not isfolder(path) then
+			pcall(makefolder, path)
+		end
+	end
+
+	if isfile and readfile and isfile("RedHubV1/windui.lua") then
+		local ok, result = pcall(readfile, "RedHubV1/windui.lua")
+		if ok and type(result) == "string" and #result > 100000 then
+			response = result
+		end
+	end
+
+	response = response or game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua")
+	local chunk = loadstring(response)
+
+	if writefile then
+		pcall(function()
+			makeFolderSafe("RedHubV1")
+			writefile("RedHubV1/windui.lua", response)
+		end)
+	end
+
+	WindUI = chunk()
+end
+
+-- Custom Theme Setup
+WindUI:AddTheme({
+	Name = "RedHubTheme",
+	Background = WindUI:Gradient({
+		["0"] = { Color = Color3.fromHex("#150e0e"), Transparency = 0.12 },
+		["100"] = { Color = Color3.fromHex("#100a0a"), Transparency = 0.12 },
+	}, { Rotation = 90 }),
+	Accent = WindUI:Gradient({
+		["0"] = { Color = Color3.fromHex("#2b0d0d"), Transparency = 0 },
+		["100"] = { Color = Color3.fromHex("#6b1e1e"), Transparency = 0 },
+	}, { Rotation = 90 }),
+	Dialog = Color3.fromHex("#1a1010"),
+	Outline = Color3.fromHex("#c52222"),
+	Text = Color3.fromHex("#ffffff"),
+	Placeholder = Color3.fromHex("#ae8f8f"),
+	Button = Color3.fromHex("#7a1f1f"),
+	Icon = Color3.fromHex("#ef4444"),
+	Toggle = Color3.fromHex("#ef4444"),
+	Slider = Color3.fromHex("#ef4444"),
+	Checkbox = Color3.fromHex("#ef4444"),
+	Primary = Color3.fromHex("#ef4444"),
+	PanelBackground = Color3.fromHex("#ef4444"),
+	PanelBackgroundTransparency = 0.94,
+	LabelBackground = Color3.fromHex("#2e0505"),
+	LabelBackgroundTransparency = 0.8,
+	ElementBackground = Color3.fromHex("#211313"),
+	ElementBackgroundTransparency = 0.3,
+})
+
+WindUI:SetTheme("RedHubTheme")
+
+-- Create Main Window with your Background Image ID
+local Window = WindUI:CreateWindow({
+	Title = "Red Hub (V1)",
+	Icon = "rbxassetid://106900682892592",
+	Author = "Murder Mystery 2",
+	Folder = "RedHubV1",
+	Background = "rbxassetid://99941566514934", -- Your requested background ID
+	Size = UDim2.fromOffset(800, 500),
+	MinSize = Vector2.new(320, 240),
+	MaxSize = Vector2.new(850, 560),
+	HideSearchBar = false,
+	Transparent = true,
+	Theme = "RedHubTheme",
+	Resizable = true,
+	Acrylic = false,
+	ShadowTransparency = 0.3,
+	Radius = 18,
+	Topbar = { Height = 56, ButtonsType = "Default" },
+	User = { Enabled = false, Anonymous = false }
+})
+
+-- Setup Floating Open Button
+Window:EditOpenButton({
+	Title = "Red Hub",
+	Icon = "rbxassetid://106900682892592",
+	CornerRadius = UDim.new(1, 0),
+	StrokeThickness = 2,
+	Color = ColorSequence.new(Color3.fromHex("#531414"), Color3.fromHex("#ef4444")),
+	OnlyMobile = false,
+	Enabled = true,
+	Draggable = true,
+})
+
+_G.RedHubWindow = Window
+
+-- Services
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+-- Tabs Definition
+local Tabs = {
+	Farm = Window:Tab({ Title = "Autofarm", Icon = "solar:dollar-minimalistic-bold" }),
+	ESP = Window:Tab({ Title = "ESP", Icon = "solar:eye-bold" }),
+	Combat = Window:Tab({ Title = "Combat", Icon = "lucide:shield" }),
+	Visuals = Window:Tab({ Title = "Visuals", Icon = "lucide:sparkles" }),
+	Player = Window:Tab({ Title = "Player", Icon = "lucide:user" }),
+	Settings = Window:Tab({ Title = "Settings", Icon = "lucide:settings" })
+}
+
+-- Role Helper Function
+local function getPlayerRole(player)
+	if not player.Character then return "Innocent" end
+	for _, item in ipairs(player.Character:GetChildren()) do  
+		if item:IsA("Tool") then  
+			if item.Name == "Knife" then return "Murderer"  
+			elseif item.Name == "Gun" or item.Name == "Revolver" then return "Sheriff" end  
+		end  
+	end  
+	if player:FindFirstChild("Backpack") then  
+		for _, item in ipairs(player.Backpack:GetChildren()) do  
+			if item.Name == "Knife" then return "Murderer"  
+			elseif item.Name == "Gun" or item.Name == "Revolver" then return "Sheriff" end  
+		end  
+	end  
+	return "Innocent"
+end
+
+-- 1. Autofarm Tab
+local isFarming = false
+local farmSpeed = 35
+local farmRadius = 200
+
+Tabs.Farm:Section({ Title = "Coin Autofarm" })
+
+Tabs.Farm:Toggle({
+	Title = "Safe Coin Autofarm",
+	Desc = "Automatically collects coins around the map using Tween.",
+	Value = false,
+	Callback = function(state)
+		isFarming = state
+		if state then
+			WindUI:Notify({ Title = "Autofarm", Content = "Autofarm enabled!", Duration = 2, Icon = "check" })
+			task.spawn(function()
+				local touchedCoins = {}
+				while isFarming do
+					task.wait(0.3)
+					pcall(function()
+						local map = nil
+						for _, v in workspace:GetDescendants() do
+							if v:IsA("Model") and v.Name == "Base" then map = v.Parent break end
+						end
+						if map and LocalPlayer.Character then
+							local coinContainer = map:FindFirstChild("CoinContainer")
+							local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+							local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+							
+							if coinContainer and root and humanoid and humanoid.Health > 0 then
+								local closestCoin = nil
+								local shortestDist = farmRadius
+								
+								for _, desc in pairs(coinContainer:GetDescendants()) do
+									if desc:IsA("TouchTransmitter") and desc.Parent and not touchedCoins[desc.Parent] then
+										local coin = desc.Parent
+										local dist = (root.Position - coin.Position).Magnitude
+										if dist < shortestDist then
+											shortestDist = dist
+											closestCoin = coin
+										end
+									end
+								end
+								
+								if closestCoin then
+									local targetCFrame = closestCoin.CFrame + Vector3.new(0, 1, 0)
+									local dist = (root.Position - closestCoin.Position).Magnitude
+									local travelTime = math.clamp(dist / farmSpeed, 0.05, 1.2)
+									
+									local tweenInfo = TweenInfo.new(travelTime, Enum.EasingStyle.Linear)
+									local tween = game:GetService("TweenService"):Create(root, tweenInfo, {CFrame = targetCFrame})
+									tween:Play()
+									tween.Completed:Wait()
+									
+									touchedCoins[closestCoin] = true
+									task.wait(0.1)
+								end
+							end
+						end
+					end)
+				end
+			end)
+		else
+			WindUI:Notify({ Title = "Autofarm", Content = "Autofarm disabled.", Duration = 2, Icon = "power-off" })
+		end
+	end
+})
+
+Tabs.Farm:Slider({
+	Title = "Farm Speed",
+	Step = 5,
+	Value = { Min = 20, Max = 70, Default = 35 },
+	Callback = function(val)
+		farmSpeed = val
+	end
+})
+
+Tabs.Farm:Slider({
+	Title = "Search Radius",
+	Step = 50,
+	Value = { Min = 100, Max = 500, Default = 200 },
+	Callback = function(val)
+		farmRadius = val
+	end
+})
+
+-- 2. ESP Tab
+Tabs.ESP:Section({ Title = "Visual ESP" })
+
+local espActive = false
+Tabs.ESP:Toggle({
+	Title = "Player Role ESP",
+	Desc = "Highlights Murderer (Red), Sheriff (Blue), Innocents (Green).",
+	Value = false,
+	Callback = function(state)
+		espActive = state
+		if state then
+			task.spawn(function()
+				while espActive do
+					pcall(function()
+						for _, player in ipairs(Players:GetPlayers()) do
+							if player ~= LocalPlayer and player.Character then
+								local char = player.Character
+								local hl = char:FindFirstChild("RedHubESP")
+								if not hl then
+									hl = Instance.new("Highlight", char)
+									hl.Name = "RedHubESP"
+									hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+									hl.FillTransparency = 0.5
+								end
+								local role = getPlayerRole(player)
+								if role == "Murderer" then  
+									hl.FillColor = Color3.fromRGB(255, 30, 30)   
+									hl.OutlineColor = Color3.fromRGB(255, 0, 0)  
+								elseif role == "Sheriff" then  
+									hl.FillColor = Color3.fromRGB(30, 144, 255)  
+									hl.OutlineColor = Color3.fromRGB(0, 100, 255)  
+								else  
+									hl.FillColor = Color3.fromRGB(40, 255, 40)   
+									hl.OutlineColor = Color3.fromRGB(0, 200, 0)  
+								end
+							end
+						end
+					end)
+					task.wait(0.5)
+				end
+			end)
+		else
+			pcall(function()
+				for _, player in ipairs(Players:GetPlayers()) do
+					if player.Character and player.Character:FindFirstChild("RedHubESP") then
+						player.Character.RedHubESP:Destroy()
+					end
+				end
+			end)
+		end
+	end
+})
+
+Tabs.ESP:Button({
+	Title = "Highlight Gun Drop",
+	Desc = "Marks the dropped gun location in yellow.",
+	Callback = function()
+		pcall(function()
+			for _, obj in ipairs(Workspace:GetChildren()) do
+				if (obj.Name == "GunDrop" or (obj:IsA("Tool") and (obj.Name == "Gun" or obj.Name == "Revolver"))) and not obj:FindFirstChild("GunESP_Highlight") then
+					local hl = Instance.new("Highlight", obj)
+					hl.Name = "GunESP_Highlight"
+					hl.FillColor = Color3.fromRGB(255, 215, 0)
+					hl.FillTransparency = 0.3
+				end
+			end
+			WindUI:Notify({ Title = "ESP", Content = "Gun highlighted!", Duration = 2, Icon = "eye" })
+		end)
+	end
+})
+
+-- 3. Combat Tab
+Tabs.Combat:Section({ Title = "Quick Actions" })
+
+local clickCounts = {
+    ["Shoot Murderer"] = 0,
+    ["Throw Knife"] = 0
+}
+
+local floatingButtons = {}
+
+local function createFloatingButton(buttonName, action)
+    if floatingButtons[buttonName] then
+        return
+    end
+
+    local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "RedHub" .. buttonName:gsub("%s+", "") .. "Button"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = playerGui
+
+    local button = Instance.new("TextButton")
+    button.Name = "FloatingButton"
+    button.Size = UDim2.fromOffset(170, 45)
+    button.Position = UDim2.new(0.5, -85, 0.25, 0)
+    button.BackgroundColor3 = Color3.fromRGB(100, 15, 15)
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.Text = "🩸 " .. buttonName
+    button.TextSize = 15
+    button.Font = Enum.Font.GothamBold
+    button.Parent = screenGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = button
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(239, 68, 68)
+    stroke.Thickness = 2
+    stroke.Parent = button
+
+    -- Drag support
+    button.Active = true
+    button.Draggable = true
+
+    button.Activated:Connect(function()
+        action()
+    end)
+
+    floatingButtons[buttonName] = screenGui
+end
+
+local function shootMurderer()
+    pcall(function()
+        local char = LocalPlayer.Character
+        local gun = char and char:FindFirstChildOfClass("Tool")
+
+        if gun and (gun.Name == "Gun" or gun.Name == "Revolver") then
+            gun:Activate()
+            WindUI:Notify({
+                Title = "Combat",
+                Content = "Gun activated!",
+                Duration = 2,
+                Icon = "check"
+            })
+        end
+    end)
+end
+
+local function throwKnife()
+    pcall(function()
+        local char = LocalPlayer.Character
+        local knife = char and char:FindFirstChildOfClass("Tool")
+
+        if knife and knife.Name == "Knife" then
+            knife:Activate()
+            WindUI:Notify({
+                Title = "Combat",
+                Content = "Knife activated!",
+                Duration = 2,
+                Icon = "check"
+            })
+        end
+    end)
+end
+
+Tabs.Combat:Button({
+    Title = "Shoot Murderer",
+    Desc = "Press 3 times to create a floating button.",
+    Callback = function()
+        clickCounts["Shoot Murderer"] += 1
+
+        if clickCounts["Shoot Murderer"] >= 3 then
+            createFloatingButton("Shoot Murderer", shootMurderer)
+            clickCounts["Shoot Murderer"] = 0
+
+            WindUI:Notify({
+                Title = "RED HUB (V1)",
+                Content = "Shoot Murderer button created!",
+                Duration = 3,
+                Icon = "check"
+            })
+        else
+            shootMurderer()
+        end
+    end
+})
+
+Tabs.Combat:Button({
+    Title = "Throw Knife",
+    Desc = "Press 3 times to create a floating button.",
+    Callback = function()
+        clickCounts["Throw Knife"] += 1
+
+        if clickCounts["Throw Knife"] >= 3 then
+            createFloatingButton("Throw Knife", throwKnife)
+            clickCounts["Throw Knife"] = 0
+
+            WindUI:Notify({
+                Title = "RED HUB (V1)",
+                Content = "Throw Knife button created!",
+                Duration = 3,
+                Icon = "check"
+            })
+        else
+            throwKnife()
+        end
+    end
+})
+
+-- 4. Visuals Tab
+Tabs.Visuals:Section({ Title = "World Visuals" })
+
+Tabs.Visuals:Toggle({
+	Title = "Red Cyberpunk Shader",
+	Desc = "Changes lighting tone and removes shadows.",
+	Value = false,
+	Callback = function(state)
+		pcall(function()
+			if state then
+				Lighting.ClockTime = 0
+				Lighting.GlobalShadows = false
+				local cc = Lighting:FindFirstChild("RedHub_CC") or Instance.new("ColorCorrectionEffect", Lighting)
+				cc.Name = "RedHub_CC"
+				cc.TintColor = Color3.fromRGB(255, 180, 180)
+				cc.Contrast = 0.35
+			else
+				Lighting.ClockTime = 14
+				Lighting.GlobalShadows = true
+				for _, obj in ipairs(Lighting:GetChildren()) do
+					if obj:IsA("PostEffect") and obj.Name == "RedHub_CC" then 
+						obj:Destroy() 
+					end
+				end
+			end
+		end)
+	end
+})
+
+local auraEffect = nil
+Tabs.Visuals:Toggle({
+	Title = "Neon Red Aura (Player Effect)",
+	Desc = "Adds a glowing red aura around your character.",
+	Value = false,
+	Callback = function(state)
+		pcall(function()
+			if state then
+				local char = LocalPlayer.Character
+				if char and char:FindFirstChild("HumanoidRootPart") then
+					auraEffect = Instance.new("Highlight")
+					auraEffect.Name = "RedHubAura"
+					auraEffect.FillColor = Color3.fromRGB(255, 0, 0)
+					auraEffect.OutlineColor = Color3.fromRGB(255, 255, 255)
+					auraEffect.FillTransparency = 0.3
+					auraEffect.OutlineTransparency = 0
+					auraEffect.Parent = char
+				end
+			else
+				if auraEffect then auraEffect:Destroy() end
+				local char = LocalPlayer.Character
+				if char and char:FindFirstChild("RedHubAura") then
+					char.RedHubAura:Destroy()
+				end
+			end
+		end)
+	end
+})
+
+-- 5. Player Tab
+Tabs.Player:Section({ Title = "Appearance" })
+
+Tabs.Player:Button({
+	Title = "Headless (Remove Head)",
+	Desc = "Makes your head invisible while keeping accessories.",
+	Callback = function()
+		pcall(function()
+			local char = LocalPlayer.Character
+			if char then
+				local head = char:FindFirstChild("Head")
+				if head then
+					head.Transparency = 1
+					for _, v in ipairs(head:GetChildren()) do
+						if v:IsA("Decal") then v.Transparency = 1 end
+					end
+				end
+				WindUI:Notify({ Title = "Player", Content = "Headless applied!", Duration = 2, Icon = "check" })
+			end
+		end)
+	end
+})
+
+Tabs.Player:Button({
+	Title = "Korblox (Right Leg)",
+	Desc = "Applies the Korblox leg mesh.",
+	Callback = function()
+		pcall(function()
+			local char = LocalPlayer.Character
+			if char then
+				if char:FindFirstChild("RightUpperLeg") then
+					local upper = char:FindFirstChild("RightUpperLeg")
+					local lower = char:FindFirstChild("RightLowerLeg")
+					local foot = char:FindFirstChild("RightFoot")
+					if upper then upper.MeshId = "rbxassetid://902942096"; upper.TextureID = "rbxassetid://902843398" end
+					if lower then lower.MeshId = "rbxassetid://902942093"; lower.Transparency = 1 end
+					if foot then foot.MeshId = "rbxassetid://902942089"; foot.Transparency = 1 end
+				elseif char:FindFirstChild("Right Leg") then
+					local rLeg = char:FindFirstChild("Right Leg")
+					if rLeg then
+						rLeg.MeshId = "rbxassetid://902942089"
+						rLeg.TextureID = "rbxassetid://902843398"
+					end
+				end
+				WindUI:Notify({ Title = "Player", Content = "Korblox applied!", Duration = 2, Icon = "check" })
+			end
+		end)
+	end
+})
+
+-- 6. Settings Tab
+Tabs.Settings:Section({ Title = "Player Profile & Stats" })
+
+local profileParagraph = Tabs.Settings:Paragraph({
+	Title = "Profile Card",
+	Desc = "Name: " .. LocalPlayer.Name .. "\nPing-fps: Calculating...\nServer player: " .. #Players:GetPlayers() .. " / " .. Players.MaxPlayers .. "\nRegistration time: Loading..."
+})
+
+task.spawn(function()
+	while true do
+		pcall(function()
+			local ping = math.round(LocalPlayer:GetNetworkPing() * 1000)
+			local fps = math.round(1 / game:GetService("RunService").RenderStepped:Wait())
+			profileParagraph:SetDesc("Name: " .. LocalPlayer.Name .. "\nPing-fps: " .. ping .. "ms / " .. fps .. " FPS\nServer player: " .. #Players:GetPlayers() .. " / " .. Players.MaxPlayers .. "\nAccount Age: " .. LocalPlayer.AccountAge .. " days")
+		end)
+		task.wait(1)
+	end
+end)
+
+-- Final notification
+WindUI:Notify({
+	Title = "Red Hub (V1) Loaded",
+	Content = "Successfully initialized with custom background!",
+	Duration = 4,
+	Icon = "check"
+})

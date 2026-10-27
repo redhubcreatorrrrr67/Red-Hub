@@ -1,5 +1,0 @@
--- 1. Запуск RedHub с GitHub
-loadstring(game:HttpGet("https://raw.githubusercontent.com/redhubcreatorrrrr67/RedHub/refs/heads/main/Script"))()
-
--- 2. Запуск второго скрипта
-loadstring(game:HttpGet("https://api.project-reverse.org/run/eyJpZCI6IjZmMDAxNDBjLTg3MTQtNGMwZS1iYjk4LTAyYTA3OTY5MjA1NSIsImtpbmQiOiJsb2FkZXIiLCJ2aXN1YWwiOnsiaWQiOiJjdXN0b20iLCJ1cmwiOiJodHRwczovL3Jhd y5naXRodWJ1c2VyY29udGVudC5jb20vcmVkaHViY3JlYXRvcnJycnI2Ny9SZWRIdWIvcmVmcy9oZWFkcy9tYWluL1NjcmlwdCJ9fQ"))()
